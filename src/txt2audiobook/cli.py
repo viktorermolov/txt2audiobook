@@ -1,5 +1,4 @@
 import os
-import sys
 import argparse
 from signal import SIGINT, SIGTERM, signal
 
@@ -8,7 +7,7 @@ from .core import (
 )
 
 
-def _graceful_exit(sig, frame):  # pragma: no cover - signal handling
+def _graceful_exit(_sig, _frame):  # pragma: no cover - signal handling
     print("\n⏹️  Прерывание пользователем – завершаю…")
     raise SystemExit(130)
 
@@ -18,16 +17,46 @@ def build_parser() -> argparse.ArgumentParser:
         prog="txt2audiobook",
         description="Преобразование TXT в русскую аудиокнигу (XTTS v2)",
     )
-    p.add_argument("input", nargs="?", default="txtbook", help="Папка с .txt файлами")
+    p.add_argument(
+        "input",
+        nargs="?",
+        default="txtbook",
+        help="Папка с .txt файлами",
+    )
     p.add_argument("--out", default="audiobook", help="Папка для MP3")
-    p.add_argument("--chapters", default="audio_chapters", help="Папка для WAV глав")
+    p.add_argument(
+        "--chapters",
+        default="audio_chapters",
+        help="Папка для WAV глав",
+    )
     p.add_argument("--tmp", default="tmp", help="Временная папка для сегментов")
-    p.add_argument("--model", default=os.getenv("T2A_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2"))
-    p.add_argument("--speaker", default=os.getenv("T2A_SPEAKER", "Viktor Menelaos"))
+    p.add_argument(
+        "--model",
+        default=os.getenv(
+            "T2A_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2"
+        ),
+    )
+    p.add_argument(
+        "--speaker",
+        default=os.getenv("T2A_SPEAKER", "Viktor Menelaos"),
+    )
     p.add_argument("--lang", default=os.getenv("T2A_LANG", "ru"))
-    p.add_argument("--max-chars", type=int, default=int(os.getenv("T2A_MAX_CHARS", 180)), help="Макс. символов в сегменте")
-    p.add_argument("--delete-txt", action="store_true", help="Удалять исходные .txt после успешной сборки")
-    p.add_argument("--keep-wavs", action="store_true", help="Не удалять WAV главы после сборки MP3")
+    p.add_argument(
+        "--max-chars",
+        type=int,
+        default=int(os.getenv("T2A_MAX_CHARS", 180)),
+        help="Макс. символов в сегменте",
+    )
+    p.add_argument(
+        "--delete-txt",
+        action="store_true",
+        help="Удалять исходные .txt после успешной сборки",
+    )
+    p.add_argument(
+        "--keep-wavs",
+        action="store_true",
+        help="Не удалять WAV главы после сборки MP3",
+    )
     return p
 
 
@@ -74,8 +103,6 @@ def main(argv=None) -> int:
 
             if not args.keep_wavs:
                 # Remove WAVs for this book only
-                base = os.path.splitext(name)[0]
-                wav_prefix = os.path.join(args.chapters, "chapter_")
                 try:
                     for fn in os.listdir(args.chapters):
                         if fn.startswith("chapter_") and fn.endswith(".wav"):
@@ -91,4 +118,3 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
-

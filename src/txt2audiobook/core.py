@@ -62,7 +62,13 @@ def split_by_chapters(txt: str) -> List[Dict[str, str]]:
     return chapters
 
 
-def _synthesize_segment(text: str, out_path: str, model: str, speaker: str, lang: str) -> Optional[str]:
+def _synthesize_segment(
+    text: str,
+    out_path: str,
+    model: str,
+    speaker: str,
+    lang: str,
+) -> Optional[str]:
     try:
         tts = _ensure_tts(model)
         tts.tts_to_file(text=text, file_path=out_path, speaker=speaker, language=lang)
@@ -266,4 +272,3 @@ def process_txt_file(
         print(f"✅ Готово: {mp3_path}")
         return mp3_path
     return None
-
