@@ -9,7 +9,7 @@ python = ">=3.11,<3.12"
 TTS = "^0.22.0"          # нужна ≥0.21 для xtts_v2   [oai_citation:8‡Coqui AI Documentation](https://docs.coqui.ai/en/latest/models/xtts.html?utm_source=chatgpt.com)
 pydub = "^0.25.1"
 mutagen = "^1.47.0"
-torch = ">=2.2,<2.6"
+torch = ">=2.2,<2.9"
 transformers = "<4.50"
 
 [build-system]
