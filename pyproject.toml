@@ -10,7 +10,7 @@ TTS = "^0.22.0"          # нужна ≥0.21 для xtts_v2   [oai_citation:8�
 pydub = "^0.25.1"
 mutagen = "^1.47.0"
 torch = ">=2.2,<2.6"
-transformers = "<4.50"
+transformers = "<4.54"
 
 [build-system]
 requires = ["poetry-core"]
