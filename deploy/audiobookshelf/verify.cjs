@@ -51,6 +51,8 @@ expectVersion(fromSocket, 'engine.io', '6.6.10')
 expectVersion(fromAdapter, 'ws', '8.21.3')
 expectVersion(fromEngine, 'ws', '8.21.3')
 expectVersion(fromExpress, 'body-parser', '1.20.8')
+// proxy-addr < 2.0.8: IP spoofing via IPv4-mapped IPv6 trust subnets.
+expectVersion(fromExpress, 'proxy-addr', '2.0.8')
 // moment < 2.31.0: path traversal via non-string locale (CVE-2026-17495).
 const fromSequelize = createRequire(appRequire.resolve('sequelize'))
 expectVersion(fromSequelize, 'moment', '2.31.0')
