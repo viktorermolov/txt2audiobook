@@ -36,6 +36,9 @@ _SENTINEL = ""  # stands in for a protected period during splitting
 
 _NBSP = "   "
 _SOFT_HYPHEN = "­"
+# Ligature punctuation is outside Silero's symbols and was silently dropped,
+# losing both the intonation and the sentence break ("Что⁈ Мы уходим").
+_PUNCT_LIGATURES = str.maketrans({"⁈": "?!", "⁉": "!?", "‼": "!!", "⁇": "??"})
 
 # Only decorated folios are unambiguous enough to discard. A bare number may
 # be a chapter heading, list item, verse, or mathematical content.
@@ -160,6 +163,12 @@ def _normalize_quotes(text: str) -> str:
 
 # Multi-word / dotted abbreviations expanded into spoken words.
 # Order matters: longer patterns first. \. allows optional space between parts.
+_CLOSERS = "»\"”)]"
+# What may follow an abbreviation's period: space, end, comma/semicolon, or a
+# closing quote/bracket ("в 1945 г.»").
+_ABBR_END = r"(?=[\s»\"”)\]]|$|[,;])"
+
+
 def _sentence_period(match: re.Match) -> str:
     """"." when the abbreviation's period also ends the sentence, else "".
 
@@ -167,6 +176,9 @@ def _sentence_period(match: re.Match) -> str:
     ("в 1905 г. он родился") would make Silero pause with falling intonation.
     """
     rest = match.string[match.end():].lstrip(" \t")
+    # «Он умер в 1945 г.» Все молчали. — the sentence ends inside the quote.
+    if rest[:1] in _CLOSERS:
+        rest = rest.lstrip(_CLOSERS + " \t")
     if not rest or rest[0] == "\n" or rest[0].isupper() or rest[0] in "«\"„“":
         return "."
     return ""
@@ -208,8 +220,8 @@ _ABBR_PATTERNS: list[tuple[re.Pattern, object]] = [
 _ABBR_CONTEXT: list[tuple[re.Pattern, str]] = [
     # Only a four-digit number before г. is a year ("1905г." without the space
     # the year rules need); "500 г." is grams, handled by _GRAM_RE.
-    (re.compile(r"(?<=\d{4})(?<!\d{5})\s*г\.(?=\s|$|,)"), " год"),
-    (re.compile(r"(?<=\d)\s*гг\.(?=\s|$|,)"), " годы"),
+    (re.compile(r"(?<=\d{4})(?<!\d{5})\s*г\." + _ABBR_END), " год"),
+    (re.compile(r"(?<=\d)\s*гг\." + _ABBR_END), " годы"),
     # "г. Москва" -> "город Москва" (followed by a capitalized word)
     (re.compile(r"\bг\.\s*(?=[А-ЯЁ][а-яё])"), "город "),
     (re.compile(r"\bул\.\s*"), "улица "),
@@ -227,6 +239,7 @@ _PROTECT_ABBR = ["др", "пр", "т", "е", "к", "н", "г", "д", "стр", "
 
 def _expand_abbreviations(text: str) -> str:
     text = _CENTIMETER_RE.sub(_expand_centimeters, text)
+    text = _YEAR_RANGE_RE.sub(_expand_year_range, text)
     text = _YEAR_PREP_RE.sub(_expand_prep_year, text)
     text = _ERA_RE.sub(
         lambda m: ("до нашей эры" if m.group(1) else "нашей эры") + _sentence_period(m), text
@@ -375,21 +388,40 @@ _NUMBER_SIGN_RE = re.compile(r"(№+)\s*(?=\d)")
 _YEAR_WORD_RE = re.compile(r"(?<![\w.,-])(\d{1,4})\s+(году|годе|годом|года|год)\b")
 _DATE_RE = re.compile(r"(?<![\w.])(\d{1,2})\.(\d{1,2})\.(\d{4})(?!\w|\.[\w])")
 _CENTIMETER_RE = re.compile(r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*см\.(?=\s|$|[,;])", re.I)
-# "в 988 г.", "к 1812 г.", "300 г. до н. э.": a year whenever it has a
-# preposition (three or four digits) or an era. "в 100 г. муки" stays grams
-# only below 100; ancient-history years matter more than recipes here.
+# "в 988 г.", "к 1812 г.", "300 г. до н. э.": a number before "г." after a
+# preposition is a year when an era follows, when it has four digits, or when
+# it has three digits and is not an amount. An amount ("по 300 г. муки",
+# "около 200 г. масла") needs a following lowercase content word; "в"/"к"
+# always mean a year ("в 100 г. муки" is the accepted trade-off).
 _YEAR_PREP_RE = re.compile(
     r"(?<![\w.,])(?:(?P<prep>[Вв]|[Кк]о?|[Сс]о?|[Дд]о|[Пп]осле|[Оо]коло|[Пп]о)\s+)?"
-    r"(?P<n>\d{1,4})\s*г\.(?=\s|$|[,;])"
+    r"(?P<n>\d{1,4})\s*г\." + _ABBR_END
+)
+# "с 1941 по 1945 г.", "с 1914 по 1918 гг.": the range start has no "г." of
+# its own and would otherwise be read as a cardinal number.
+_YEAR_RANGE_RE = re.compile(
+    r"(?<![\w.,])(?P<p1>[Сс]о?)\s+(?P<a>\d{3,4})\s+по\s+(?P<b>\d{3,4})\s*гг?\." + _ABBR_END
+)
+# "с 879 по 912 г." / "с 1941 г. по 1945 г.": "по" ends a range (accusative);
+# elsewhere ("данные по 2020 г.") it means "concerning" (dative).
+_RANGE_START_BEHIND_RE = re.compile(
+    r"\b[Сс]о?\s+\d{1,4}(?:\s*г\.)?(?:\s*(?:до\s+)?н\.\s*э\.)?\s+$"
 )
 _ERA_AHEAD_RE = re.compile(r"\s*(?:до\s+)?н\.\s*э\.")
+_WORD_AHEAD_RE = re.compile(r"\s+([а-яё]+)")
+# Lowercase words that continue a sentence after a year, never a measured noun.
+_YEAR_FOLLOWERS = frozenset(
+    "и а но или на в во до после к ко по при с со от из за у о об про через же ли "
+    "он она оно они мы я ты вы это этот эта эти тот та те был была было были "
+    "уже ещё еще когда тогда здесь там его её ее их".split()
+)
 _YEAR_PREP_FORMS = {
     "в": ("м", "году"), "к": ("му", "году"), "ко": ("му", "году"), "по": ("му", "году"),
     "с": ("го", "года"), "со": ("го", "года"), "до": ("го", "года"),
     "после": ("го", "года"), "около": ("го", "года"),
 }
 _ERA_RE = re.compile(r"\b(до\s+)?н\.\s*э\.")
-_YEAR_RE = re.compile(r"(?<!\w)(\d{4})\s+г\.(?=\s|$|[,;])")
+_YEAR_RE = re.compile(r"(?<!\w)(\d{4})\s+г\." + _ABBR_END)
 _MONTHS_GENITIVE = (
     "января", "февраля", "марта", "апреля", "мая", "июня",
     "июля", "августа", "сентября", "октября", "ноября", "декабря",
@@ -431,16 +463,29 @@ def _expand_centimeters(match: re.Match) -> str:
     return f"{value} {_unit_form(value, 'сантиметр', 'сантиметра', 'сантиметров')}."
 
 
+def _expand_year_range(match: re.Match) -> str:
+    start = _ordinal_to_words(int(match.group("a")), "го")
+    end = _ordinal_to_words(int(match.group("b")), "й")
+    return f"{match.group('p1')} {start} по {end} год" + _sentence_period(match)
+
+
 def _expand_prep_year(match: re.Match) -> str:
     prep, digits = match.group("prep"), match.group("n")
     n = int(digits)
+    p = prep.lower() if prep else None
     era = _ERA_AHEAD_RE.match(match.string, match.end())
-    if not (era or (prep and (len(digits) == 4 or n >= 100))):
-        return match.group(0)  # a bare number: grams or a 4-digit _YEAR_RE
+    range_end = p == "по" and _RANGE_START_BEHIND_RE.search(
+        match.string, max(0, match.start() - 40), match.start()
+    )
+    word = _WORD_AHEAD_RE.match(match.string, match.end())
+    amount = word is not None and word.group(1) not in _YEAR_FOLLOWERS
+    short_year = p is not None and n >= 100 and (p in {"в", "к", "ко"} or range_end or not amount)
+    if not (era or (p and len(digits) == 4) or short_year):
+        return match.group(0)  # an amount (grams) or a bare 4-digit _YEAR_RE
     if not prep:
         return f"{_ordinal_to_words(n, 'й')} год" + _sentence_period(match)
-    suffix, word = _YEAR_PREP_FORMS[prep.lower()]
-    return f"{prep} {_ordinal_to_words(n, suffix)} {word}" + _sentence_period(match)
+    suffix, noun = ("й", "год") if range_end else _YEAR_PREP_FORMS[p]
+    return f"{prep} {_ordinal_to_words(n, suffix)} {noun}" + _sentence_period(match)
 
 
 def _expand_year_word(match: re.Match) -> str:
@@ -568,7 +613,7 @@ def split_sentences(text: str) -> list[str]:
 
 def clean_text(text: str) -> str:
     """Full normalization producing speakable prose (paragraphs preserved)."""
-    text = _normalize_whitespace(text)
+    text = _normalize_whitespace(text).translate(_PUNCT_LIGATURES)
     text = _strip_artifacts(text)
     text = _normalize_quotes(text)
     text = _reflow(text)

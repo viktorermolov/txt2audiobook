@@ -232,6 +232,22 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(source.exists())
         self.assertEqual(2, len(clients))
 
+    def test_opf_roles_use_the_prefix_audiobookshelf_reads(self) -> None:
+        import xml.etree.ElementTree as ET
+
+        from app.library import write_opf
+
+        path = self.root / "metadata.opf"
+        write_opf(path, {"title": "Книга", "author": "Автор", "source_name": "b.fb2",
+                         "series": "Цикл", "series_index": "2"}, "eugene")
+        raw = path.read_text(encoding="utf-8")
+        self.assertIn("<dc:creator>Автор</dc:creator>", raw)
+        self.assertIn('opf:role="nrt">Silero eugene<', raw)
+        self.assertNotIn(" role=", raw)
+        root = ET.parse(path).getroot()
+        self.assertEqual("{http://www.idpf.org/2007/opf}package", root.tag)
+        self.assertIn('name="calibre:series"', raw)
+
     def test_cover_is_published_atomically_and_checked_on_retry(self) -> None:
         job, source = self.create_job(content_hash="7" * 64)
         audio = self.root / "book.m4b"

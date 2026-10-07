@@ -582,6 +582,28 @@ def _sanitize_for_silero(text: str) -> str:
     return t.strip()
 
 
+_MAX_SPLIT_DEPTH = 3  # up to 8 parts per chunk
+_SPLIT_PAUSE_SEC = 0.3
+_SPLIT_POINTS = (
+    re.compile(r"[.!?…]+\s+"),   # sentence end
+    re.compile(r"[,;:–]\s+"),     # clause
+    re.compile(r"\s+"),           # any word boundary
+)
+
+
+def _split_in_half(text: str) -> tuple[str, str] | None:
+    """Split near the middle at the strongest available boundary, keeping
+    both halves speakable. None if the text cannot be split."""
+    middle = len(text) / 2
+    for pattern in _SPLIT_POINTS:
+        cuts = [m.end() for m in pattern.finditer(text) if 0 < m.end() < len(text)]
+        for cut in sorted(cuts, key=lambda c: abs(c - middle)):
+            first, second = text[:cut].strip(), text[cut:].strip()
+            if _has_speakable(first) and _has_speakable(second):
+                return first, second
+    return None
+
+
 class _SileroEngine:
     """Lazy wrapper so the module imports without torch installed."""
 
@@ -597,10 +619,6 @@ class _SileroEngine:
             raise SynthError("Библиотека torch не установлена в контейнере") from e
 
         self._torch = torch
-        try:
-            torch.set_num_threads(max(1, int(threads)))
-        except Exception:
-            pass
         torch.set_grad_enabled(False)
 
         try:
@@ -615,6 +633,13 @@ class _SileroEngine:
 
         try:
             self.model.to(torch.device("cpu"))
+        except Exception:
+            pass
+        # Set threads only now: the Silero package runs torch.set_num_threads(1)
+        # when it is unpickled, which silently made synthesis single-threaded.
+        try:
+            torch.set_num_threads(max(1, int(threads)))
+            log.info("Silero загружен: потоков PyTorch %d", torch.get_num_threads())
         except Exception:
             pass
 
@@ -660,6 +685,41 @@ class _SileroEngine:
         t = re.sub(r"^[\s,.:;!?–-]+", "", t)
         return t.strip()
 
+    def _tts_array(
+        self, text: str, *, sample_rate: int, put_accent: bool, put_yo: bool, depth: int = 0,
+    ):
+        """apply_tts as a float32 array. Silero refuses inputs that would yield
+        more than ~60 s of audio ("probably it's too long") — dense dialogue
+        hits that well below the character cap — so such a chunk is split at a
+        sentence boundary and voiced in parts instead of becoming silence."""
+        import numpy as np
+
+        try:
+            audio = self.model.apply_tts(
+                text=text,
+                speaker=self.speaker,
+                sample_rate=sample_rate,
+                put_accent=put_accent,
+                put_yo=put_yo,
+            )
+        except Exception as e:
+            halves = _split_in_half(text) if depth < _MAX_SPLIT_DEPTH else None
+            if not halves or "too long" not in str(e).lower():
+                raise
+            log.info("Фрагмент слишком длинный для Silero (%d симв.) — делю пополам", len(text))
+            gap = np.zeros(int(_SPLIT_PAUSE_SEC * sample_rate), dtype="float32")
+            first, second = (
+                self._tts_array(
+                    half, sample_rate=sample_rate, put_accent=put_accent,
+                    put_yo=put_yo, depth=depth + 1,
+                )
+                for half in halves
+            )
+            return np.concatenate([first, gap, second])
+        # apply_tts returns a 1-D float tensor in [-1, 1].
+        arr = audio.detach().cpu().numpy().astype("float32")
+        return arr.reshape(-1) if arr.ndim > 1 else arr
+
     def synth_to_wav(
         self,
         text: str,
@@ -672,17 +732,9 @@ class _SileroEngine:
     ) -> None:
         import numpy as np
 
-        audio = self.model.apply_tts(
-            text=text,
-            speaker=self.speaker,
-            sample_rate=sample_rate,
-            put_accent=put_accent,
-            put_yo=put_yo,
+        arr = self._tts_array(
+            text, sample_rate=sample_rate, put_accent=put_accent, put_yo=put_yo,
         )
-        # apply_tts returns a 1-D float tensor in [-1, 1].
-        arr = audio.detach().cpu().numpy().astype("float32")
-        if arr.ndim > 1:
-            arr = arr.reshape(-1)
         if arr.size < max(1, sample_rate // 12):
             raise SynthError("Silero вернул пустой звук")
         if not np.isfinite(arr).all():

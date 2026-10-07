@@ -1,7 +1,8 @@
 FROM ghcr.io/advplyr/audiobookshelf@sha256:6432d1dc58951b0280b29144ffc69834a8ae02786a2126f6b7c9bd453801c78b AS upstream
 FROM node:24.21.0-alpine3.23@sha256:9ec4a2e289874ed0d722e1772ec2de45d2801541db8612f3638b26f128c69ac2
 
-RUN apk add --no-cache ffmpeg tini tzdata
+# upgrade: the pinned Node base predates Alpine security fixes (OpenSSL, expat, …).
+RUN apk upgrade --no-cache && apk add --no-cache ffmpeg tini tzdata
 WORKDIR /app
 COPY --from=upstream /app /app
 COPY --from=upstream /usr/local/lib/nusqlite3 /usr/local/lib/nusqlite3

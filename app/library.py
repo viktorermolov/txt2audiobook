@@ -37,15 +37,20 @@ def book_relative_path(meta: dict, content_hash: str, job_id: int | None = None)
 def write_opf(path: Path, meta: dict, speaker: str) -> None:
     opf = "http://www.idpf.org/2007/opf"
     dc = "http://purl.org/dc/elements/1.1/"
-    ET.register_namespace("", opf)
+    # An explicit "opf" prefix: ABS reads creators only via "opf:role" (an
+    # unprefixed "role" — what a default namespace produces — is ignored, so
+    # the narrator never showed up). The author deliberately has no role: ABS
+    # then keeps authors from the audio tags, which it splits into names
+    # ("Ильф, Петров" → two authors); an OPF author would be taken verbatim.
+    ET.register_namespace("opf", opf)
     ET.register_namespace("dc", dc)
+    role = f"{{{opf}}}role"
     root = ET.Element(f"{{{opf}}}package", version="2.0")
     metadata = ET.SubElement(root, f"{{{opf}}}metadata")
-    for key, value in [("title", meta.get("title") or Path(meta["source_name"]).stem),
-                       ("creator", meta.get("author") or "Неизвестный автор"),
-                       ("language", "ru")]:
-        ET.SubElement(metadata, f"{{{dc}}}{key}").text = value
-    ET.SubElement(metadata, f"{{{dc}}}creator", {f"{{{opf}}}role": "nrt"}).text = f"Silero {speaker}"
+    ET.SubElement(metadata, f"{{{dc}}}title").text = meta.get("title") or Path(meta["source_name"]).stem
+    ET.SubElement(metadata, f"{{{dc}}}creator").text = meta.get("author") or "Неизвестный автор"
+    ET.SubElement(metadata, f"{{{dc}}}language").text = "ru"
+    ET.SubElement(metadata, f"{{{dc}}}creator", {role: "nrt"}).text = f"Silero {speaker}"
     if meta.get("series"):
         ET.SubElement(metadata, f"{{{opf}}}meta", name="calibre:series", content=meta["series"])
         if meta.get("series_index"):

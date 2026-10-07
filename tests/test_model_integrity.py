@@ -184,6 +184,31 @@ class ModelIntegrityTests(unittest.TestCase):
         with patch.dict(sys.modules, {"torch": fake_torch}):
             synth._SileroEngine(model, "eugene", 1)
 
+    def test_threads_are_applied_after_the_package_resets_them(self) -> None:
+        model = self.voices / f"{MODEL_ID}.pt"
+        model.parent.mkdir(parents=True)
+        model.write_bytes(self.good_model)
+        state = {"threads": 4}
+
+        class SileroLikeImporter:
+            def __init__(self, _source) -> None:
+                pass
+
+            def load_pickle(self, *_):
+                state["threads"] = 1  # the real package does torch.set_num_threads(1)
+                return types.SimpleNamespace(speakers=[], symbols=[], to=lambda _: None)
+
+        fake_torch = types.SimpleNamespace(
+            package=types.SimpleNamespace(PackageImporter=SileroLikeImporter),
+            device=lambda _: "cpu",
+            set_num_threads=lambda n: state.__setitem__("threads", n),
+            get_num_threads=lambda: state["threads"],
+            set_grad_enabled=lambda _: None,
+        )
+        with patch.dict(sys.modules, {"torch": fake_torch}):
+            synth._SileroEngine(model, "eugene", 3)
+        self.assertEqual(3, state["threads"])
+
     def test_logs_do_not_contain_download_error_details(self) -> None:
         self.voices.mkdir(parents=True)
         existing = self.voices / f"{MODEL_ID}.pt"

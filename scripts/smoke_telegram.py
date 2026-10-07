@@ -43,7 +43,7 @@ async def main():
         raise RuntimeError("Активные задачи: проверка не запущена")
     loop = asyncio.get_running_loop()
     session = AiohttpSession(timeout=cfg.telegram.upload_timeout_sec)
-    bot = Bot(cfg.telegram.bot_token, session=session)
+    bot = Bot(cfg.telegram.bot_token.get_secret_value(), session=session)
     notifier = Notifier(bot, loop, cfg.telegram.allowed_user_id)
     worker = Worker(cfg, store, notifier, loop, CancelRegistry())
     dispatcher = build_dispatcher(BotContext(cfg, store, notifier, worker, loop))

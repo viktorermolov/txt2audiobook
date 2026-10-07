@@ -104,7 +104,13 @@ voice-affecting settings. A missing or nonmatching manifest invalidates old WAV
 caches; never weaken this guard, because mixing voice settings or sample rates
 corrupts a resumed M4B. Silero rejects any character outside `model.symbols`
 (lowercase Cyrillic, `ё`, `_~|!+,-.:;?`, en-dash, ellipsis, space), so all text
-is filtered to that set before `apply_tts`. After successful assembly, per-chunk
+is filtered to that set before `apply_tts`. Ligature punctuation (⁈ ⁉ ‼ ⁇) is
+mapped to plain marks first. Silero's real limit is ~60 s of output per call
+(dense dialogue hits it well under the character cap): a "too long" failure is
+split at sentence boundaries (`_split_in_half`, up to 8 parts) before a chunk
+may become silence. The Silero package runs `torch.set_num_threads(1)` while
+unpickling, so `tts.threads` is applied only after the model loads (the log
+line "потоков PyTorch N" shows the effective value). After successful assembly, per-chunk
 WAVs are removed to protect Pi disk space; publication retries use the retained
 M4B.
 
@@ -132,8 +138,14 @@ numbered M4B files, `metadata.opf`, and `.txt2audiobook.json`. The receipt
 validates content hash, job ID, filenames, sizes, and audio SHA-256 values on
 retry. Do not overwrite a pre-existing invalid destination.
 
+`metadata.opf` uses an explicit `opf:` prefix and `opf:role="nrt"` for the
+narrator (ABS ignores an unprefixed `role`). The author creator has no role on
+purpose: ABS then takes authors from the audio tags and splits co-authors.
+
 ABS discovers changes with its library watcher; a native scan cron provides a
-two-minute fallback. The publisher does not send `POST` scan. It polls the API
+two-minute fallback. ABS never prunes the per-scan logs it writes (720 a day),
+so the compose `command` runs a background loop deleting scan logs older than
+14 days. The publisher does not send `POST` scan. It polls the API
 until the destination is indexed with all audio files and nonzero duration.
 Only then is the HTTPS public item URL sent to Telegram. `/publish [id]` starts
 a manual repeat with an explicit outcome; `/resend [id]` is its alias. DONE jobs
@@ -172,7 +184,15 @@ ABS so web deletion removes files instead of resurrecting them on the next scan.
 Completed bot jobs are not automatically republished after web deletion.
 Both services run as UID/GID 1002 (overridable), with read-only root
 filesystems, all capabilities dropped, and private writable data directories.
-Cloudflared is pinned to `2026.9.1` behind the optional `tunnel` profile; the
+Base images are pinned by digest (Python, Node, ABS upstream, cloudflared);
+bump them deliberately and rebuild with the tests and the offline smoke. Builds
+also run `apt-get upgrade`/`apk upgrade` for security fixes newer than the pin.
+The converter image declares no `VOLUME`: a declared one made Compose carry an
+old read-write bind of all of `data/config` into every recreated container.
+Verify with `docker inspect claude-audiobook` that `/data/config` holds only the
+read-only `config.yaml`; recreate with `docker compose up -d -V audiobook` if not.
+Cloudflared is pinned to `2026.10.0` behind the optional `tunnel` profile, with
+its metrics/diagnostics server on loopback only; the
 public URL is `audiobookshelf.public_url` (see `CLAUDE.local.md`). Keep
 `build.network: host`: Pi BuildKit needs it for DNS during Dockerfile `RUN`
 steps.

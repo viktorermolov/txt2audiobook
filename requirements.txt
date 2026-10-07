@@ -1,6 +1,6 @@
 aiogram==3.31.0
 # aiogram 3.13 capped aiohttp<3.11 (66 advisories); pin the patched release.
-aiohttp==3.14.3
+aiohttp==3.14.4
 aiosqlite==0.20.0
 pydantic==2.13.5
 pyyaml==6.0.2

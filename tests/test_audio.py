@@ -207,6 +207,67 @@ class AudioTests(unittest.TestCase):
             )
         self.assertFalse(out.exists())
 
+    def test_too_long_chunk_is_split_at_sentences_instead_of_silenced(self) -> None:
+        import numpy as np
+
+        calls: list[str] = []
+
+        class Tensor:
+            def __init__(self, n: int) -> None:
+                self.n = n
+
+            def detach(self):
+                return self
+
+            def cpu(self):
+                return self
+
+            def numpy(self):
+                return np.full(self.n, 0.25, dtype=np.float32)
+
+        def apply_tts(*, text, **_):
+            calls.append(text)
+            if len(text) > 40:
+                raise ValueError("Model couldn't generate your text, probably it's too long")
+            return Tensor(8000)
+
+        engine = object.__new__(RealSileroEngine)
+        engine.model = types.SimpleNamespace(apply_tts=apply_tts)
+        engine.speaker = "eugene"
+        text = "Первое предложение тут. Второе предложение здесь. Третье и последнее."
+        out = self.root / "split.wav"
+        engine.synth_to_wav(
+            text, out, sample_rate=8000, put_accent=True, put_yo=True, sentence_silence=0,
+        )
+        spoken = [part for part in calls if len(part) <= 40]
+        self.assertEqual(text, " ".join(spoken))
+        self.assertTrue(all(part.rstrip()[-1] in ".!?" for part in spoken[:-1]))
+        with wave.open(str(out)) as audio:
+            pause = int(synth._SPLIT_PAUSE_SEC * 8000)
+            self.assertEqual(len(spoken) * 8000 + (len(spoken) - 1) * pause, audio.getnframes())
+
+    def test_other_model_errors_are_not_split(self) -> None:
+        calls: list[str] = []
+
+        def apply_tts(*, text, **_):
+            calls.append(text)
+            raise KeyError("ʃ")
+
+        engine = object.__new__(RealSileroEngine)
+        engine.model = types.SimpleNamespace(apply_tts=apply_tts)
+        engine.speaker = "eugene"
+        with self.assertRaises(KeyError):
+            engine.synth_to_wav(
+                "Одно. Два. Три.", self.root / "x.wav", sample_rate=8000,
+                put_accent=True, put_yo=True, sentence_silence=0,
+            )
+        self.assertEqual(1, len(calls))
+
+    def test_split_in_half_prefers_sentence_then_clause_boundaries(self) -> None:
+        self.assertEqual(("Раз два.", "Три четыре."), synth._split_in_half("Раз два. Три четыре."))
+        self.assertEqual(("Раз два,", "три четыре"), synth._split_in_half("Раз два, три четыре"))
+        self.assertIsNone(synth._split_in_half("Слово"))
+
     def test_part_metadata_uses_title_from_full_plan(self) -> None:
         info = assemble._ChunkInfo(self.plan[2], self.root / "x.wav", 1.0)
         meta = assemble._build_ffmeta(

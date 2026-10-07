@@ -23,9 +23,9 @@ services:
     environment:
       AUDIOBOOK_CONFIG: /data/config/config.yaml
       TZ: Europe/Moscow
-      # Match tts.threads (PyTorch intra-op). The cpus limit below (3.5) is the
-      # real thermal cap, so synthesis never pegs all 4 cores.
-      OMP_NUM_THREADS: "4"
+      # Match tts.threads (PyTorch intra-op; applied after the model loads).
+      # 3 is fastest under the cpus limit below (3.5), the real thermal cap.
+      OMP_NUM_THREADS: "3"
       LOG_LEVEL: INFO
     volumes:
       - ./data/books:/data/books
@@ -54,7 +54,17 @@ services:
     image: local/audiobookshelf-hardened:2.37.0
     restart: unless-stopped
     user: "${AUDIOBOOK_UID:-1002}:${AUDIOBOOK_GID:-1002}"
-    command: ["sh", "-c", "umask 077; exec node dist-server/index.js"]
+    # ABS writes one scan log per library scan (every 2 min via the fallback
+    # cron) and never prunes them (loggerScannerLogsToKeep is unused in 2.37),
+    # so a background loop keeps two weeks.
+    command:
+      - sh
+      - -c
+      - >-
+        umask 077;
+        (while :; do find /metadata/logs/scans -type f -name '*.txt' -mtime +14 -delete 2>/dev/null;
+        sleep 86400; done) &
+        exec node dist-server/index.js
     read_only: true
     cap_drop: [ALL]
     tmpfs:
@@ -78,11 +88,13 @@ services:
         max-file: "3"
 
   cloudflared:
-    image: cloudflare/cloudflared:2026.9.1
+    image: cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
     profiles: ["tunnel"]
     restart: unless-stopped
     user: "${CLOUDFLARED_UID:-1002}:${CLOUDFLARED_GID:-1002}"
-    command: tunnel --no-autoupdate run --token-file /run/secrets/tunnel-token
+    # Metrics/diagnostics (incl. the tunnel ID) stay on loopback, not the
+    # compose network shared with ABS and the converter.
+    command: tunnel --no-autoupdate --metrics 127.0.0.1:20241 run --token-file /run/secrets/tunnel-token
     volumes:
       - ./data/cloudflared/tunnel-token:/run/secrets/tunnel-token:ro
     read_only: true

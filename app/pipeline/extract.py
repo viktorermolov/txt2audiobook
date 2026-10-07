@@ -44,8 +44,12 @@ _FB2_MAX_SECTION_DEPTH = 32
 # lists, which for a multi-megabyte legacy TXT costs hundreds of MB per candidate.
 _DECODE_SCORE_SAMPLE_CHARS = 256 * 1024
 
-# Encodings we try first for Russian content, in order.
-_RU_FALLBACKS = ["utf-8", "windows-1251", "koi8-r", "ibm866", "iso-8859-5", "mac-cyrillic"]
+# Encodings we try first for Russian content, in order. MacCyrillic is
+# deliberately absent: it shares lowercase а-ю with windows-1251 and differs
+# mostly on capitals and "я", so it out-scored the real codec on CP1251 books
+# and silently garbled them. Genuine MacCyrillic books are vanishingly rare.
+_RU_FALLBACKS = ["utf-8", "windows-1251", "koi8-r", "ibm866", "iso-8859-5"]
+_REJECTED_DETECTIONS = {"mac_cyrillic", "maccyrillic", "x_mac_cyrillic"}
 
 
 # Letters that dominate normal Russian text. Mojibake from a wrong single-byte
@@ -53,6 +57,13 @@ _RU_FALLBACKS = ["utf-8", "windows-1251", "koi8-r", "ibm866", "iso-8859-5", "mac
 # letters separates real Russian from garbage.
 _COMMON_RU = set("оеаинтсрвлкмдпуяыьгзбчйхжшюцщэфё ОЕАИНТСРВЛКМДПУЯЫЬГЗБЧЙХ")
 _FREQUENT_RU = set("оеаинтсрвлкмд")
+# Letters of no East Slavic language: a near-miss codec yields them (cp1251
+# read as MacCyrillic gives ј ѕ ќ …), real Russian/Ukrainian/Belarusian never.
+_NON_EAST_SLAVIC = set("ђѓјљњћќџѕЂЃЈЉЊЋЌЏЅ")
+# cp1251 and KOI8-R swap letter case for each other: a misread gives words
+# like "лЕФДС" (lowercase, then capitals), which real prose never has.
+_CYR_WORD_RE = re.compile(r"[А-яЁё]{2,}")
+_INVERTED_CASE_RE = re.compile(r"[а-яё][А-ЯЁ]+")
 
 
 def _cyrillic_ratio(s: str) -> float:
@@ -73,11 +84,23 @@ def _text_score(text: str) -> float:
     cyr_letters = [c for c in text if "Ѐ" <= c <= "ӿ" or c in "Ёё"]
     if cyr_letters:
         freq = sum(1 for c in cyr_letters if c.lower() in _FREQUENT_RU) / len(cyr_letters)
+        foreign = sum(1 for c in cyr_letters if c in _NON_EAST_SLAVIC) / len(cyr_letters)
     else:
-        freq = 0.0
+        freq = foreign = 0.0
     # Share of bytes that are sensible text characters.
     printable = sum(1 for c in text if c.isprintable() or c in "\n\r\t") / n
-    return _cyrillic_ratio(text) * 0.5 + freq * 1.0 + printable * 0.3 - repl * 3.0
+    # KOI8-R/CP866 read with the other's table turn most letters into
+    # box-drawing glyphs; the few surviving letters then look perfectly Russian.
+    visible = sum(1 for c in text if not c.isspace()) or 1
+    boxes = sum(1 for c in text if "\u2500" <= c <= "\u259f") / visible
+    words = _CYR_WORD_RE.findall(text)
+    inverted = (
+        sum(1 for w in words if _INVERTED_CASE_RE.fullmatch(w)) / len(words) if words else 0.0
+    )
+    return (
+        _cyrillic_ratio(text) * 0.5 + freq * 1.0 + printable * 0.3
+        - repl * 3.0 - foreign * 5.0 - boxes * 3.0 - inverted * 3.0
+    )
 
 
 def decode_bytes(data: bytes) -> str:
@@ -106,7 +129,9 @@ def decode_bytes(data: bytes) -> str:
     candidates: list[str] = []
     try:
         for match in list(from_bytes(data))[:5]:
-            candidates.append(str(match))
+            encoding = (match.encoding or "").lower().replace("-", "_")
+            if encoding not in _REJECTED_DETECTIONS:
+                candidates.append(str(match))
     except Exception as e:  # pragma: no cover - defensive
         log.debug("charset-normalizer failed: %s", e)
     for enc in _RU_FALLBACKS:

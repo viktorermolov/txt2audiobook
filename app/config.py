@@ -7,8 +7,15 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 
+# Validation errors must never echo raw input: a bad config would otherwise
+# print most of the bot token into the container log.
+_PRIVATE = ConfigDict(hide_input_in_errors=True)
+
+
 class TelegramConfig(BaseModel):
-    bot_token: str
+    model_config = _PRIVATE
+
+    bot_token: SecretStr
     allowed_user_id: int
     # HTTP timeout for Telegram API calls, seconds. Large uploads (tens of MB)
     # over a slow uplink need far more than the library default of 60 s.
@@ -16,8 +23,8 @@ class TelegramConfig(BaseModel):
 
     @field_validator("bot_token")
     @classmethod
-    def _token_set(cls, v: str) -> str:
-        if not v or v == "PLACEHOLDER_BOT_TOKEN":
+    def _token_set(cls, v: SecretStr) -> SecretStr:
+        if v.get_secret_value() in {"", "PLACEHOLDER_BOT_TOKEN"}:
             raise ValueError(
                 "telegram.bot_token не задан — впишите токен от @BotFather в config.yaml"
             )
@@ -36,7 +43,7 @@ class TelegramConfig(BaseModel):
 class TTSConfig(BaseModel):
     # Legacy Piper keys (voice/length_scale) are silently ignored if present.
     # protected_namespaces=() lets us have a field literally named `model`.
-    model_config = ConfigDict(extra="ignore", protected_namespaces=())
+    model_config = ConfigDict(extra="ignore", protected_namespaces=(), hide_input_in_errors=True)
 
     # Silero model package id (downloaded from models.silero.ai) and speaker.
     model: str = "v5_5_ru"
@@ -57,11 +64,14 @@ class TTSConfig(BaseModel):
     put_yo: bool = True
     # Trailing pause appended after each chunk, seconds.
     sentence_silence: float = Field(default=0.4, ge=0, le=5)
-    # Torch CPU threads. Pi 4 has 4 cores; keep <= cores to limit heat.
-    threads: int = Field(default=4, ge=1, le=4)
+    # Torch CPU threads. Measured on the Pi 4 under the 3.5-CPU compose quota:
+    # 1 → 2.2x real time, 2 → 2.8x, 3 → 3.1x, 4 → 2.9x (quota contention).
+    threads: int = Field(default=3, ge=1, le=4)
 
 
 class PathsConfig(BaseModel):
+    model_config = _PRIVATE
+
     books: Path = Path("/data/books")
     audiobook: Path = Path("/data/audiobook")
     state: Path = Path("/data/state")
@@ -70,6 +80,8 @@ class PathsConfig(BaseModel):
 
 
 class ProcessingConfig(BaseModel):
+    model_config = _PRIVATE
+
     chunk_chars: int = Field(default=800, ge=100, le=800)
     audio_bitrate: str = "64k"
     audio_sample_rate: int = 48000
@@ -80,6 +92,8 @@ class ProcessingConfig(BaseModel):
 
 
 class AudiobookshelfConfig(BaseModel):
+    model_config = _PRIVATE
+
     url: str = "http://audiobookshelf:80"
     public_url: str = "http://localhost:13378"
     token: SecretStr = SecretStr("")
@@ -99,6 +113,8 @@ class AudiobookshelfConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
+    model_config = _PRIVATE
+
     telegram: TelegramConfig
     tts: TTSConfig = Field(default_factory=TTSConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)

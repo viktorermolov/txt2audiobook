@@ -45,7 +45,7 @@ async def amain(cfg) -> None:
     # on a slow uplink (the library default is 60 s).
     session = AiohttpSession()
     session.timeout = float(cfg.telegram.upload_timeout_sec)
-    bot = Bot(token=cfg.telegram.bot_token, session=session)
+    bot = Bot(token=cfg.telegram.bot_token.get_secret_value(), session=session)
     notifier = Notifier(
         bot, loop, cfg.telegram.allowed_user_id,
         send_timeout=cfg.telegram.upload_timeout_sec + 60,

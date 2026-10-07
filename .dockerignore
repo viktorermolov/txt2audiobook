@@ -3,9 +3,13 @@
 .dockerignore
 README.md
 data
-__pycache__
-*.pyc
-*.pyo
+**/__pycache__
+**/*.py[cod]
+CLAUDE.local.md
+.claude
+.ruff_cache
+.transfer-check
+docker-compose*.yml
 .venv
 venv
 .idea

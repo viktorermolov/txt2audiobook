@@ -360,5 +360,29 @@ class InputSecurityTests(unittest.TestCase):
         self.assertEqual(99, warning.call_args.args[-1])
 
 
+
+class ConfigSecretTests(unittest.TestCase):
+    TOKEN = "123456789:SECRETSECRETSECRETSECRETSECRETSECRE"
+
+    def test_bot_token_is_secret_in_repr_and_validation_errors(self) -> None:
+        from pydantic import ValidationError
+
+        cfg = AppConfig.model_validate(
+            {"telegram": {"bot_token": self.TOKEN, "allowed_user_id": 7}}
+        )
+        self.assertEqual(self.TOKEN, cfg.telegram.bot_token.get_secret_value())
+        self.assertNotIn("SECRET", repr(cfg))
+        broken = [
+            {"telegram": {"bot_token": self.TOKEN}},
+            {"telegram": {"bot_token": self.TOKEN, "allowed_user_id": "x"}},
+            {"telegram": {"bot_token": self.TOKEN, "allowed_user_id": 7},
+             "audiobookshelf": {"public_url": "ftp://x", "token": "SECRET-abs"}},
+        ]
+        for raw in broken:
+            with self.subTest(raw=list(raw)), self.assertRaises(ValidationError) as ctx:
+                AppConfig.model_validate(raw)
+            self.assertNotIn("SECRET", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

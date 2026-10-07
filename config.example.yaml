@@ -24,8 +24,9 @@ tts:
   put_yo: true
   # Пауза после каждого фрагмента, секунды.
   sentence_silence: 0.4
-  # Потоки CPU для torch. На Pi 4 ядра — 4; не выше числа ядер (нагрев).
-  threads: 4
+  # Потоки CPU для torch. Замер на Pi 4 при лимите compose 3.5 CPU: 1 → 2.2x
+  # реального времени, 2 → 2.8x, 3 → 3.1x, 4 → 2.9x. Держите равным OMP_NUM_THREADS.
+  threads: 3
 
 paths:
   books: "/data/books"

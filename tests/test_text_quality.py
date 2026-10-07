@@ -250,5 +250,72 @@ class TextQualityTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 2.0)
 
 
+    def test_legacy_cyrillic_encodings_are_decoded_exactly(self) -> None:
+        # Public-domain Chekhov ("Хамелеон"), lib.ru style: ASCII dashes/quotes.
+        chekhov = (
+            "Через базарную площадь идет полицейский надзиратель Очумелов в новой шинели "
+            "и с узелком в руке. За ним шагает рыжий городовой с решетом, доверху "
+            "наполненным конфискованным крыжовником. Кругом тишина... На площади ни души... "
+            "Открытые двери лавок и кабаков глядят на свет божий уныло, как голодные пасти; "
+            "около них нет даже нищих.\n\n"
+            "- Так ты кусаться, окаянная? - слышит вдруг Очумелов. - Ребята, не пущай ее! "
+            "Нынче не велено кусаться! Держи! А... а!\n"
+        )
+        samples = [
+            chekhov,
+            chekhov.replace("Через", "Глава 1-я. Ёлки\n\nЯков: \"Через") + '"',
+            "Мінск, улица Леніна. Он жил здесь давно.",  # Belarusian/Ukrainian letters
+            "Село Іванівка стояло на берегу реки.",
+            "— Вот теперь верю, — улыбнувшись, я хлопнул его по плечу.",
+            "Буквально через несколько минут мне позвонил Алексей.",
+            "ГЛАВА ПЕРВАЯ. ВОЗВРАЩЕНИЕ ДОМОЙ ПОСЛЕ ДОЛГОЙ ВОЙНЫ",
+        ]
+        checked = 0
+        for source in samples:
+            for encoding in ("windows-1251", "koi8-r", "ibm866", "iso-8859-5"):
+                try:
+                    data = source.encode(encoding)
+                except UnicodeEncodeError:
+                    continue  # e.g. "і" or "—" has no byte in that codepage
+                checked += 1
+                with self.subTest(encoding=encoding, text=source[:30]):
+                    self.assertEqual(source, extract.decode_bytes(data))
+        self.assertGreaterEqual(checked, 20)
+
+    @unittest.skipUnless(PathFinder.find_spec("num2words"), "num2words is not installed")
+    def test_real_num2words_year_ranges_and_gram_amounts(self) -> None:
+        cases = {
+            "Война шла с 1941 по 1945 г.":
+                "с тысяча девятьсот сорок первого по тысяча девятьсот сорок пятый год.",
+            "Первая мировая шла с 1914 по 1918 гг.":
+                "с тысяча девятьсот четырнадцатого по тысяча девятьсот восемнадцатый год.",
+            "Служил с 1941 г. по 1945 г., потом":
+                "по тысяча девятьсот сорок пятый год, потом",
+            "Данные по 2020 г. показывают рост.": "по две тысячи двадцатому году показывают",
+            "До 988 г. Русь была языческой.": "До девятьсот восемьдесят восьмого года. Русь",
+            "Империя пала после 476 г.": "после четыреста семьдесят шестого года.",
+            "После 476 г. на Западе": "После четыреста семьдесят шестого года на Западе",
+            "Около 300 г. до н. э. жили.": "Около трёхсотого года до нашей эры жили.",
+            "Это было в 988 г. давно.": "в девятьсот восемьдесят восьмом году давно.",
+            "Жил до 1990 г. там.": "до тысяча девятьсот девяностого года там.",
+            "Возьмите по 300 г. муки.": "по триста граммов муки.",
+            "Нужно около 200 г. масла.": "около двести граммов масла.",
+            "Набрал до 500 г. веса.": "до пятьсот граммов веса.",
+        }
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                self.assertIn(expected, clean.clean_text(source))
+        quoted = clean.clean_text("«Он умер в 1945 г.» Все молчали.")
+        self.assertIn("сорок пятом году.»", quoted)
+        self.assertEqual(2, len(clean.split_sentences(quoted)))
+        ranged = clean.clean_text("Олег правил с 879 по 912 г. Потом пришёл Игорь.")
+        self.assertIn("с восемьсот семьдесят девятого по девятьсот двенадцатый год.", ranged)
+        self.assertEqual(2, len(clean.split_sentences(ranged)))
+
+    def test_ligature_punctuation_keeps_intonation_and_sentence_breaks(self) -> None:
+        sentences = clean.split_sentences(clean.clean_text("Ты серьёзно⁈ Мы уходим‼ Правда⁇"))
+        self.assertEqual(["Ты серьёзно?!", "Мы уходим!!", "Правда??"], sentences)
+
+
 if __name__ == "__main__":
     unittest.main()
