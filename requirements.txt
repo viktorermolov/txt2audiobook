@@ -14,7 +14,7 @@ watchdog==5.0.3
 num2words==0.5.13
 # Silero TTS runs on PyTorch (CPU). aarch64 manylinux wheels exist on PyPI;
 # on ARM there is no CUDA variant, so this is the CPU build.
-torch==2.3.1
+torch==2.13.0
 numpy==1.26.4
 httpx==0.27.2
 pillow==12.3.0
