@@ -1,0 +1,98 @@
+services:
+  audiobook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Use the host network for build RUN steps so apt/pip resolve DNS via the
+      # host resolver (BuildKit's default bridge can't reach DNS on this Pi).
+      network: host
+    image: claude-audiobook:latest
+    container_name: claude-audiobook
+    restart: unless-stopped
+    stop_grace_period: 90s
+    # Python is not PID 1, so SIGTERM is never dropped before the asyncio
+    # signal handlers are installed (startup reconciliation, menu setup).
+    init: true
+    user: "${AUDIOBOOK_UID:-1002}:${AUDIOBOOK_GID:-1002}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=268435456,mode=1777
+    environment:
+      AUDIOBOOK_CONFIG: /data/config/config.yaml
+      TZ: Europe/Moscow
+      # Match tts.threads (PyTorch intra-op). The cpus limit below (3.5) is the
+      # real thermal cap, so synthesis never pegs all 4 cores.
+      OMP_NUM_THREADS: "4"
+      LOG_LEVEL: INFO
+    volumes:
+      - ./data/books:/data/books
+      - ./data/audiobook:/data/audiobook
+      - ./data/state:/data/state
+      - ./data/work:/data/work
+      - ./data/voices:/data/voices
+      - ./data/config/config.yaml:/data/config/config.yaml:ro
+      - ./data/library:/library
+    # Consume up to 6 GB out of 8 GB on the Pi; leave headroom for the OS.
+    mem_limit: 6g
+    mem_reservation: 1g
+    cpus: 3.5
+    # Friendlier to the SD card / thermals; one book at a time is the design anyway.
+    cpu_shares: 512
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  audiobookshelf:
+    build:
+      context: deploy/audiobookshelf
+      network: host
+    image: local/audiobookshelf-hardened:2.37.0
+    restart: unless-stopped
+    user: "${AUDIOBOOK_UID:-1002}:${AUDIOBOOK_GID:-1002}"
+    command: ["sh", "-c", "umask 077; exec node dist-server/index.js"]
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp:size=134217728,mode=1777
+    ports:
+      - "127.0.0.1:13378:80"
+    environment:
+      TZ: Europe/Moscow
+    volumes:
+      - ./data/abs/config:/config
+      - ./data/abs/metadata:/metadata
+      - ./data/library:/library
+    mem_limit: 768m
+    cpus: 1.0
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.1
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    user: "${CLOUDFLARED_UID:-1002}:${CLOUDFLARED_GID:-1002}"
+    command: tunnel --no-autoupdate run --token-file /run/secrets/tunnel-token
+    volumes:
+      - ./data/cloudflared/tunnel-token:/run/secrets/tunnel-token:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

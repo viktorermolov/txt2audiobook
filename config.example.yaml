@@ -1,0 +1,62 @@
+# Скопируйте этот файл в ./data/config/config.yaml и заполните перед запуском.
+
+telegram:
+  # Токен от @BotFather
+  bot_token: "PLACEHOLDER_BOT_TOKEN"
+  # Ваш Telegram user ID — только этот пользователь может управлять ботом.
+  # Узнать можно через @userinfobot
+  allowed_user_id: 0
+  # Таймаут получения исходного файла и отправки уведомлений.
+  upload_timeout_sec: 600
+
+tts:
+  # Движок — Silero TTS (локально, CPU). Модель скачивается один раз
+  # с models.silero.ai в папку voices.
+  # Пакет модели Silero для русского языка.
+  model: "v5_5_ru"
+  # Голос (диктор) внутри модели. Для v5_5_ru: eugene и др.
+  speaker: "eugene"
+  # Частота синтеза: 8000 / 24000 / 48000. На Pi 48000 синтезируется с той же
+  # скоростью, что и 24000 (вокодер Silero нативно 48 кГц) — качество бесплатно.
+  sample_rate: 48000
+  # Silero сам расставляет ударения и «ё» — улучшает русскую интонацию.
+  put_accent: true
+  put_yo: true
+  # Пауза после каждого фрагмента, секунды.
+  sentence_silence: 0.4
+  # Потоки CPU для torch. На Pi 4 ядра — 4; не выше числа ядер (нагрев).
+  threads: 4
+
+paths:
+  books: "/data/books"
+  audiobook: "/data/audiobook"
+  state: "/data/state"
+  work: "/data/work"
+  voices: "/data/voices"
+
+processing:
+  # Результат всегда один M4B: прежние лимиты Telegram больше не используются.
+  # Целевой размер чанка для синтеза (символы). Чем больше — тем быстрее в сумме
+  # и меньше накладные расходы, но больше пиковая память. 800 — комфортно для Pi 4.
+  chunk_chars: 800
+  # Битрейт AAC. 64k — комфортное качество речи при 48 кГц (~28 МБ/час).
+  audio_bitrate: "64k"
+  # Частота дискретизации M4B; совпадает с tts.sample_rate, чтобы избежать
+  # лишней передискретизации.
+  audio_sample_rate: 48000
+  # Сколько раз пробовать пересоздать упавший чанк синтеза.
+  synth_retries: 2
+  # Темп речи, «вшитый» в M4B: 1.0 — естественный темп диктора, 1.15 — чуть
+  # быстрее (без изменения высоты голоса). Большинство плееров умеют менять
+  # скорость и сами — менять здесь стоит, только если ваш плеер не умеет.
+  tempo: 1.0
+
+audiobookshelf:
+  url: "http://audiobookshelf:80"
+  public_url: "https://abs.example.com"  # адрес из ссылок в Telegram
+  # Создаются scripts/bootstrap_abs.py. Настоящий токен хранится только на Pi.
+  token: ""
+  library_id: ""
+  library_path: "/library"
+  scan_timeout_sec: 180
+  retry_interval_sec: 120

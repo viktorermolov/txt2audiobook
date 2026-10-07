@@ -1,0 +1,20 @@
+aiogram==3.31.0
+# aiogram 3.13 capped aiohttp<3.11 (66 advisories); pin the patched release.
+aiohttp==3.14.3
+aiosqlite==0.20.0
+pydantic==2.13.5
+pyyaml==6.0.2
+charset-normalizer==3.4.0
+ebooklib==0.18
+beautifulsoup4==4.12.3
+lxml==6.1.3
+striprtf==0.0.28
+markdown-it-py==3.0.0
+watchdog==5.0.3
+num2words==0.5.13
+# Silero TTS runs on PyTorch (CPU). aarch64 manylinux wheels exist on PyPI;
+# on ARM there is no CUDA variant, so this is the CPU build.
+torch==2.3.1
+numpy==1.26.4
+httpx==0.27.2
+pillow==12.3.0

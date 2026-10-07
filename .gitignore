@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.idea/
+.vscode/
+.DS_Store
+data/
+!data/.gitkeep
+config.yaml
+*.log
+
+# Claude Code: track shared project settings, ignore local/runtime state
+.claude/*
+!.claude/settings.json
+
+# Deployment specifics for Claude Code; this repository is public
+CLAUDE.local.md

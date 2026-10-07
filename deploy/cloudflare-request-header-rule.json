@@ -1,0 +1,15 @@
+{
+  "ref": "audiobookshelf_trusted_client_ip",
+  "expression": "http.host eq \"abs.example.com\"",
+  "description": "Use edge-verified client address for Audiobookshelf login rate limiting",
+  "action": "rewrite",
+  "action_parameters": {
+    "headers": {
+      "x-client-ip": {
+        "operation": "set",
+        "expression": "ip.src"
+      }
+    }
+  },
+  "enabled": true
+}
